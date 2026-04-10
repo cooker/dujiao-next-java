@@ -1,0 +1,58 @@
+server:
+  port: 8080
+
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+  application:
+    name: dujiao-next-api
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/dujiao}
+    driver-class-name: org.postgresql.Driver
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    root: INFO
+    com.dujiao: DEBUG
+    org.hibernate.SQL: WARN
+
+dujiao:
+  app:
+    version: ${DUJIAO_APP_VERSION:0.1.0-SNAPSHOT}
+  payment:
+    # 收银台基地址（空则返回相对路径 /pay?payment_id=…）；生产可设为前端域名
+    checkout-base-url: ${DUJIAO_PAYMENT_CHECKOUT_BASE_URL:}
+    # 仅开发联调：开启后允许 POST /api/v1/payments/{id}/simulate-completion 将支付置成功
+    simulate-completion-enabled: ${DUJIAO_PAYMENT_SIMULATE:false}
+  # 与 Go crypto.DeriveKey 一致：用于加密存储渠道 client_secret（AES-256-GCM）
+  crypto:
+    master-key: ${DUJIAO_CRYPTO_MASTER_KEY:dev-dujiao-jwt-secret-key-change-in-production-32b!}
+  upload:
+    # 本地存储目录（相对路径或绝对路径）
+    base-dir: ${DUJIAO_UPLOAD_DIR:./data/uploads}
+    # 返回给前端的 URL 前缀（与 UploadStaticResourceConfig 的 /uploads/** 一致）
+    public-base-path: /uploads
+  jwt:
+    # 开发环境占位；生产务必通过环境变量覆盖为高强度随机串（≥32 字节）
+    secret: "dev-dujiao-jwt-secret-key-change-in-production-32b!"
+    expiration-ms: 86400000
+    remember-expiration-ms: 604800000
+  mail:
+    # 未配置 spring.mail 时仅打日志；生产可设发件人并启用 SMTP
+    from: ${DUJIAO_MAIL_FROM:}
