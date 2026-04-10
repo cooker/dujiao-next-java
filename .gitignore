@@ -6,3 +6,4 @@
 .settings/
 .vscode/
 *.log
+/data/
