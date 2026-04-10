@@ -98,7 +98,11 @@ public class AdminUserService {
             u.setDisplayName(req.displayName().trim());
         }
         if (req.status() != null && !req.status().isBlank()) {
-            u.setStatus(req.status().trim());
+            String st = req.status().trim().toLowerCase();
+            if (!st.equals("active") && !st.equals("disabled") && !st.equals("suspended")) {
+                throw new BusinessException(ResponseCodes.BAD_REQUEST, "bad_request");
+            }
+            u.setStatus(st);
         }
         return toDto(userAccountRepository.save(u));
     }

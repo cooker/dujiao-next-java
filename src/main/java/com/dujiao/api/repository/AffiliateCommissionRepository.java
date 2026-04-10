@@ -56,4 +56,25 @@ public interface AffiliateCommissionRepository extends JpaRepository<AffiliateCo
             @Param("available") String available,
             @Param("before") Instant before,
             @Param("now") Instant now);
+
+    /** 与 Go {@code GetProfileStatsBatch} 有效订单数一致（DISTINCT order_id，排除 rejected）。 */
+    @Query(
+            "SELECT c.affiliateProfileId, COUNT(DISTINCT c.orderId) FROM AffiliateCommissionEntity c WHERE "
+                    + "c.affiliateProfileId IN :ids AND c.status <> :rejected AND c.orderId IS NOT NULL "
+                    + "GROUP BY c.affiliateProfileId")
+    List<Object[]> countDistinctOrdersByProfileExcludingRejected(
+            @Param("ids") Collection<Long> ids, @Param("rejected") String rejected);
+
+    @Query(
+            "SELECT c.affiliateProfileId, COALESCE(SUM(c.commissionAmount), 0) FROM AffiliateCommissionEntity c WHERE "
+                    + "c.affiliateProfileId IN :ids AND c.status = :st GROUP BY c.affiliateProfileId")
+    List<Object[]> sumCommissionByProfileAndStatus(
+            @Param("ids") Collection<Long> ids, @Param("st") String status);
+
+    @Query(
+            "SELECT c.affiliateProfileId, COALESCE(SUM(c.commissionAmount), 0) FROM AffiliateCommissionEntity c WHERE "
+                    + "c.affiliateProfileId IN :ids AND c.status = :st AND c.withdrawRequestId IS NULL "
+                    + "GROUP BY c.affiliateProfileId")
+    List<Object[]> sumAvailableUnboundByProfile(
+            @Param("ids") Collection<Long> ids, @Param("st") String status);
 }

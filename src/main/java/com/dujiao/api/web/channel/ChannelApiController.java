@@ -35,7 +35,7 @@ import com.dujiao.api.dto.user.AffiliateWithdrawDto;
 import com.dujiao.api.dto.user.RedeemGiftCardRequest;
 import com.dujiao.api.dto.wallet.WalletDto;
 import com.dujiao.api.dto.wallet.WalletRechargeCreateRequest;
-import com.dujiao.api.dto.wallet.WalletRechargeUserDto;
+import com.dujiao.api.dto.wallet.WalletRechargePaymentPayloadDto;
 import com.dujiao.api.dto.wallet.WalletTransactionDto;
 import com.dujiao.api.repository.ChannelClientRepository;
 import com.dujiao.api.security.SecurityUtils;
@@ -582,7 +582,7 @@ public class ChannelApiController {
     }
 
     @PostMapping("/wallet/recharge")
-    public ResponseEntity<ApiResponse<WalletRechargeUserDto>> walletRecharge(
+    public ResponseEntity<ApiResponse<WalletRechargePaymentPayloadDto>> walletRecharge(
             @Valid @RequestBody ChannelWalletRechargeRequest req) {
         long uid =
                 channelTelegramIdentityService.provisionAndGetUserId(

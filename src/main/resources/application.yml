@@ -2,6 +2,11 @@ server:
   port: 8080
 
 spring:
+  jackson:
+    # 与 Go encoding/json 的 time.Time 一致：字符串 RFC3339/ISO-8601，禁止 epoch 毫秒
+    serialization:
+      write-dates-as-timestamps: false
+    time-zone: UTC
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration

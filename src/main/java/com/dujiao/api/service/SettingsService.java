@@ -287,6 +287,23 @@ public class SettingsService {
         return d;
     }
 
+    /** 与 Go {@code SettingService.GetSiteCurrency}（{@code site_config.currency}）一致，缺省 CNY。 */
+    @Transactional(readOnly = true)
+    public String getSiteCurrency() {
+        JsonNode n = getJson("site_config").path("currency");
+        if (n.isTextual()) {
+            String s = n.asText().trim();
+            if (!s.isEmpty()) {
+                return s.toUpperCase(Locale.ROOT);
+            }
+        }
+        Object flat = getSettingsMap().get("currency");
+        if (flat instanceof String s && !s.isBlank()) {
+            return s.trim().toUpperCase(Locale.ROOT);
+        }
+        return "CNY";
+    }
+
     private static boolean parseBool(Object v, boolean defaultVal) {
         if (v == null) {
             return defaultVal;

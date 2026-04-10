@@ -76,7 +76,7 @@ public class UserGiftCardService {
         if (card.getExpiresAt() != null && Instant.now().isAfter(card.getExpiresAt())) {
             throw new BusinessException(ResponseCodes.BAD_REQUEST, "gift_card_expired");
         }
-        BigDecimal amt = card.getBalance();
+        BigDecimal amt = card.getAmount();
         if (amt == null || amt.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ResponseCodes.BAD_REQUEST, "gift_card_invalid");
         }

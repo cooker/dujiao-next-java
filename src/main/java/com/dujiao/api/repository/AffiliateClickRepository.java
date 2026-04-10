@@ -2,6 +2,8 @@ package com.dujiao.api.repository;
 
 import com.dujiao.api.domain.AffiliateClickEntity;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -23,4 +25,10 @@ public interface AffiliateClickRepository extends JpaRepository<AffiliateClickEn
                     + "c.createdAt DESC, c.id DESC")
     Page<AffiliateClickEntity> findLatestForVisitor(
             @Param("vk") String visitorKey, @Param("since") Instant since, Pageable pageable);
+
+    /** 与 Go {@code GetProfileStatsBatch} 点击汇总一致。 */
+    @Query(
+            "SELECT c.affiliateProfileId, COUNT(c) FROM AffiliateClickEntity c WHERE "
+                    + "c.affiliateProfileId IN :ids GROUP BY c.affiliateProfileId")
+    List<Object[]> countClicksGroupedByProfileId(@Param("ids") Collection<Long> ids);
 }

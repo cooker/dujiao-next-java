@@ -31,7 +31,8 @@ import com.dujiao.api.dto.auth.TelegramLoginRequest;
 import com.dujiao.api.dto.auth.TelegramMiniAppLoginRequest;
 import com.dujiao.api.dto.wallet.WalletDto;
 import com.dujiao.api.dto.wallet.WalletRechargeCreateRequest;
-import com.dujiao.api.dto.wallet.WalletRechargeUserDto;
+import com.dujiao.api.dto.wallet.WalletRechargeItemDto;
+import com.dujiao.api.dto.wallet.WalletRechargePaymentPayloadDto;
 import com.dujiao.api.dto.wallet.WalletTransactionDto;
 import com.dujiao.api.common.api.ResponseCodes;
 import com.dujiao.api.common.exception.BusinessException;
@@ -326,29 +327,33 @@ public class UserApiController {
     }
 
     @PostMapping("/wallet/recharge")
-    public ResponseEntity<ApiResponse<WalletRechargeUserDto>> rechargeWallet(
+    public ResponseEntity<ApiResponse<WalletRechargePaymentPayloadDto>> rechargeWallet(
             @Valid @RequestBody WalletRechargeCreateRequest req) {
         long uid = SecurityUtils.requireUserId();
         return ResponseEntity.ok(ApiResponse.success(userWalletRechargeService.create(uid, req)));
     }
 
+    /** 与 Go {@code ListMyWalletRecharges}：{@code status}、{@code recharge_no} 筛选。 */
     @GetMapping("/wallet/recharges")
-    public ResponseEntity<PageResponse<List<WalletRechargeUserDto>>> listRecharges(
+    public ResponseEntity<PageResponse<List<WalletRechargeItemDto>>> listRecharges(
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(name = "page_size", defaultValue = "20") int pageSize) {
+            @RequestParam(name = "page_size", defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String status,
+            @RequestParam(name = "recharge_no", required = false) String rechargeNo) {
         long uid = SecurityUtils.requireUserId();
-        return ResponseEntity.ok(userWalletRechargeService.list(uid, page, pageSize));
+        return ResponseEntity.ok(userWalletRechargeService.list(uid, page, pageSize, status, rechargeNo));
     }
 
+    /** 与 Go {@code GetMyWalletRecharge}：返回 {@code WalletRechargePaymentPayload}。 */
     @GetMapping("/wallet/recharges/{rechargeNo}")
-    public ResponseEntity<ApiResponse<WalletRechargeUserDto>> getRecharge(
+    public ResponseEntity<ApiResponse<WalletRechargePaymentPayloadDto>> getRecharge(
             @PathVariable String rechargeNo) {
         long uid = SecurityUtils.requireUserId();
         return ResponseEntity.ok(ApiResponse.success(userWalletRechargeService.get(uid, rechargeNo)));
     }
 
     @PostMapping("/wallet/recharge/payments/{id}/capture")
-    public ResponseEntity<ApiResponse<WalletRechargeUserDto>> captureRechargePayment(
+    public ResponseEntity<ApiResponse<WalletRechargePaymentPayloadDto>> captureRechargePayment(
             @PathVariable String id) {
         long uid = SecurityUtils.requireUserId();
         return ResponseEntity.ok(

@@ -6,23 +6,22 @@ import com.dujiao.api.common.api.PaginationDto;
 import com.dujiao.api.common.api.ResponseCodes;
 import com.dujiao.api.common.exception.BusinessException;
 import com.dujiao.api.domain.AffiliateCommissionEntity;
-import com.dujiao.api.domain.AffiliateProfileEntity;
 import com.dujiao.api.domain.AffiliateWithdrawEntity;
-import com.dujiao.api.domain.UserAccount;
+import com.dujiao.api.dto.admin.AffiliateProfileStatusRequest;
+import com.dujiao.api.dto.admin.BatchAffiliateProfileStatusRequest;
 import com.dujiao.api.repository.AffiliateCommissionRepository;
-import com.dujiao.api.repository.AffiliateProfileRepository;
 import com.dujiao.api.repository.AffiliateWithdrawRepository;
-import com.dujiao.api.repository.UserAccountRepository;
 import com.dujiao.api.security.SecurityUtils;
+import com.dujiao.api.service.AdminAffiliateMgmtService;
 import com.dujiao.api.web.ApiPaths;
-import java.util.HashMap;
+import jakarta.validation.Valid;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -37,90 +36,54 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(ApiPaths.V1 + "/admin/affiliates")
 public class AdminAffiliateMgmtController {
 
-    private static final String PROFILE_ACTIVE = "active";
-    private static final String PROFILE_DISABLED = "disabled";
     private static final String WITHDRAW_PENDING = "pending_review";
     private static final String WITHDRAW_REJECTED = "rejected";
     private static final String WITHDRAW_PAID = "paid";
     private static final String COMMISSION_AVAILABLE = "available";
 
-    private final AffiliateProfileRepository affiliateProfileRepository;
+    private final AdminAffiliateMgmtService adminAffiliateMgmtService;
     private final AffiliateCommissionRepository affiliateCommissionRepository;
     private final AffiliateWithdrawRepository affiliateWithdrawRepository;
-    private final UserAccountRepository userAccountRepository;
 
     public AdminAffiliateMgmtController(
-            AffiliateProfileRepository affiliateProfileRepository,
+            AdminAffiliateMgmtService adminAffiliateMgmtService,
             AffiliateCommissionRepository affiliateCommissionRepository,
-            AffiliateWithdrawRepository affiliateWithdrawRepository,
-            UserAccountRepository userAccountRepository) {
-        this.affiliateProfileRepository = affiliateProfileRepository;
+            AffiliateWithdrawRepository affiliateWithdrawRepository) {
+        this.adminAffiliateMgmtService = adminAffiliateMgmtService;
         this.affiliateCommissionRepository = affiliateCommissionRepository;
         this.affiliateWithdrawRepository = affiliateWithdrawRepository;
-        this.userAccountRepository = userAccountRepository;
     }
 
+    /** 与 Go {@code ListAffiliateUsers} 一致：分页 + {@code user_id}/{@code status}/{@code code}/{@code keyword}。 */
     @GetMapping("/users")
     public ResponseEntity<PageResponse<List<Map<String, Object>>>> listUsers(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(name = "page_size", defaultValue = "20") int pageSize,
-            @RequestParam(required = false) String status) {
+            @RequestParam(name = "user_id", required = false) String userId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String keyword) {
         SecurityUtils.requireAdminId();
-        int p = Math.max(1, page);
-        int ps = pageSize <= 0 ? 20 : pageSize;
-        PageRequest pr = PageRequest.of(p - 1, ps);
-        String st = status == null ? "" : status.trim().toLowerCase();
-        Page<AffiliateProfileEntity> rows =
-                st.isEmpty()
-                        ? affiliateProfileRepository.findAllByOrderByIdDesc(pr)
-                        : affiliateProfileRepository.findByStatusOrderByIdDesc(st, pr);
-        Map<Long, UserAccount> users = usersByIds(rows.getContent());
-        List<Map<String, Object>> data =
-                rows.getContent().stream().map(x -> profileRow(x, users.get(x.getUserId()))).toList();
-        PaginationDto pg = PaginationDto.of(rows.getNumber() + 1, rows.getSize(), rows.getTotalElements());
-        return ResponseEntity.ok(PageResponse.success(data, pg));
+        return ResponseEntity.ok(
+                adminAffiliateMgmtService.listUsers(page, pageSize, userId, status, code, keyword));
     }
 
+    /** 与 Go {@code UpdateAffiliateUserStatus} 一致：路径 {@code id} 为推广档案 ID（非用户 ID）。 */
     @PatchMapping("/users/{id}/status")
     public ResponseEntity<ApiResponse<Map<String, Object>>> updateUserStatus(
-            @PathVariable String id, @RequestBody(required = false) Map<String, Object> body) {
+            @PathVariable String id, @Valid @RequestBody AffiliateProfileStatusRequest req) {
         SecurityUtils.requireAdminId();
-        long userId = parsePositiveLong(id);
-        String status = extractStatus(body);
-        AffiliateProfileEntity profile =
-                affiliateProfileRepository
-                        .findByUserId(userId)
-                        .orElseThrow(
-                                () ->
-                                        new BusinessException(
-                                                ResponseCodes.NOT_FOUND, "affiliate_profile_not_found"));
-        profile.setStatus(status);
-        affiliateProfileRepository.save(profile);
-        UserAccount u = userAccountRepository.findById(userId).orElse(null);
-        return ResponseEntity.ok(ApiResponse.success(profileRow(profile, u)));
+        long profileId = parsePositiveLong(id);
+        return ResponseEntity.ok(
+                ApiResponse.success(adminAffiliateMgmtService.updateProfileStatus(profileId, req)));
     }
 
+    /** 与 Go {@code BatchUpdateAffiliateUserStatus} 一致：{@code profile_ids}。 */
     @PatchMapping("/users/batch-status")
     public ResponseEntity<ApiResponse<Map<String, Object>>> batchUserStatus(
-            @RequestBody(required = false) Map<String, Object> body) {
+            @Valid @RequestBody BatchAffiliateProfileStatusRequest req) {
         SecurityUtils.requireAdminId();
-        if (body == null || !(body.get("ids") instanceof List<?> idsRaw)) {
-            throw new BusinessException(ResponseCodes.BAD_REQUEST, "validation_error");
-        }
-        String status = extractStatus(body);
-        int updated = 0;
-        for (Object o : idsRaw) {
-            if (o instanceof Number n && n.longValue() > 0) {
-                affiliateProfileRepository
-                        .findByUserId(n.longValue())
-                        .ifPresent(
-                                p -> {
-                                    p.setStatus(status);
-                                    affiliateProfileRepository.save(p);
-                                });
-                updated++;
-            }
-        }
+        long updated = adminAffiliateMgmtService.batchUpdateProfileStatus(req);
         return ResponseEntity.ok(ApiResponse.success(Map.of("updated", updated)));
     }
 
@@ -210,56 +173,12 @@ public class AdminAffiliateMgmtController {
         try {
             long x = Long.parseLong(v);
             if (x <= 0) {
-                throw new BusinessException(ResponseCodes.BAD_REQUEST, "validation_error");
+                throw new BusinessException(ResponseCodes.BAD_REQUEST, "bad_request");
             }
             return x;
         } catch (NumberFormatException e) {
-            throw new BusinessException(ResponseCodes.BAD_REQUEST, "validation_error");
+            throw new BusinessException(ResponseCodes.BAD_REQUEST, "bad_request");
         }
-    }
-
-    private static String extractStatus(Map<String, Object> body) {
-        if (body == null || !(body.get("status") instanceof String s)) {
-            throw new BusinessException(ResponseCodes.BAD_REQUEST, "validation_error");
-        }
-        String st = s.trim().toLowerCase();
-        if (!PROFILE_ACTIVE.equals(st) && !PROFILE_DISABLED.equals(st)) {
-            throw new BusinessException(ResponseCodes.BAD_REQUEST, "validation_error");
-        }
-        return st;
-    }
-
-    private Map<Long, UserAccount> usersByIds(List<AffiliateProfileEntity> profiles) {
-        Set<Long> ids = profiles.stream().map(AffiliateProfileEntity::getUserId).collect(Collectors.toSet());
-        if (ids.isEmpty()) {
-            return Map.of();
-        }
-        List<UserAccount> users = userAccountRepository.findAllById(ids);
-        Map<Long, UserAccount> m = new HashMap<>();
-        for (UserAccount u : users) {
-            m.put(u.getId(), u);
-        }
-        return m;
-    }
-
-    private Map<String, Object> profileRow(AffiliateProfileEntity p, UserAccount u) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("id", p.getId());
-        out.put("user_id", p.getUserId());
-        out.put("affiliate_code", p.getAffiliateCode());
-        out.put("status", p.getStatus());
-        out.put("created_at", p.getCreatedAt());
-        out.put("updated_at", p.getUpdatedAt());
-        if (u != null) {
-            out.put("user_email", u.getEmail());
-            out.put("user_display_name", u.getDisplayName() == null ? "" : u.getDisplayName());
-            out.put("user_status", u.getStatus());
-        } else {
-            out.put("user_email", "");
-            out.put("user_display_name", "");
-            out.put("user_status", "");
-        }
-        return out;
     }
 
     private Map<String, Object> withdrawRow(AffiliateWithdrawEntity w) {

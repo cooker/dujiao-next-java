@@ -8,6 +8,7 @@ import com.dujiao.api.repository.WalletRechargeRepository;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,9 +23,12 @@ public class AdminWalletRechargeService {
 
     @Transactional(readOnly = true)
     public PageResponse<List<WalletRechargeAdminDto>> list(int page, int pageSize) {
-        PageRequest pr = PageRequest.of(Math.max(page - 1, 0), pageSize <= 0 ? 20 : pageSize);
-        Page<WalletRechargeEntity> result =
-                walletRechargeRepository.findAllByOrderByCreatedAtDesc(pr);
+        PageRequest pr =
+                PageRequest.of(
+                        Math.max(page - 1, 0),
+                        pageSize <= 0 ? 20 : pageSize,
+                        Sort.by(Sort.Direction.DESC, "id"));
+        Page<WalletRechargeEntity> result = walletRechargeRepository.findAll(pr);
         List<WalletRechargeAdminDto> list =
                 result.getContent().stream().map(this::toDto).toList();
         PaginationDto pg =

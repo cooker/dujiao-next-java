@@ -4,6 +4,7 @@ import com.dujiao.api.common.api.ApiResponse;
 import com.dujiao.api.dto.giftcard.GiftCardBatchStatusRequest;
 import com.dujiao.api.dto.giftcard.GiftCardDto;
 import com.dujiao.api.dto.giftcard.GiftCardGenerateRequest;
+import com.dujiao.api.dto.giftcard.GiftCardGenerateResponse;
 import com.dujiao.api.dto.giftcard.GiftCardUpdateRequest;
 import com.dujiao.api.security.SecurityUtils;
 import com.dujiao.api.service.AdminGiftCardService;
@@ -35,10 +36,10 @@ public class AdminGiftCardController {
     }
 
     @PostMapping("/generate")
-    public ResponseEntity<ApiResponse<List<GiftCardDto>>> generate(
+    public ResponseEntity<ApiResponse<GiftCardGenerateResponse>> generate(
             @Valid @RequestBody GiftCardGenerateRequest req) {
-        SecurityUtils.requireAdminId();
-        return ResponseEntity.ok(ApiResponse.success(adminGiftCardService.generate(req)));
+        long adminId = SecurityUtils.requireAdminId();
+        return ResponseEntity.ok(ApiResponse.success(adminGiftCardService.generate(req, adminId)));
     }
 
     @GetMapping
@@ -55,17 +56,17 @@ public class AdminGiftCardController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable String id) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> delete(@PathVariable String id) {
         SecurityUtils.requireAdminId();
         adminGiftCardService.delete(Long.parseLong(id));
-        return ResponseEntity.ok(ApiResponse.success(null));
+        return ResponseEntity.ok(ApiResponse.success(Map.of("deleted", true)));
     }
 
     @PatchMapping("/batch-status")
     public ResponseEntity<ApiResponse<Map<String, Object>>> batchStatus(
             @Valid @RequestBody GiftCardBatchStatusRequest req) {
         SecurityUtils.requireAdminId();
-        return ResponseEntity.ok(ApiResponse.success(Map.of("updated", adminGiftCardService.batchStatus(req))));
+        return ResponseEntity.ok(ApiResponse.success(Map.of("affected", adminGiftCardService.batchStatus(req))));
     }
 
     @PostMapping("/export")

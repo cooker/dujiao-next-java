@@ -4,19 +4,24 @@ import com.dujiao.api.common.api.PaginationDto;
 import com.dujiao.api.common.api.PageResponse;
 import com.dujiao.api.common.api.ResponseCodes;
 import com.dujiao.api.common.exception.BusinessException;
+import com.dujiao.api.domain.PaymentEntity;
 import com.dujiao.api.domain.WalletAccount;
 import com.dujiao.api.domain.WalletRechargeEntity;
-import com.dujiao.api.domain.WalletTransaction;
 import com.dujiao.api.dto.wallet.WalletRechargeCreateRequest;
-import com.dujiao.api.dto.wallet.WalletRechargeUserDto;
+import com.dujiao.api.dto.wallet.WalletRechargeItemDto;
+import com.dujiao.api.dto.wallet.WalletRechargePaymentPayloadDto;
+import com.dujiao.api.repository.PaymentRepository;
 import com.dujiao.api.repository.WalletAccountRepository;
 import com.dujiao.api.repository.WalletRechargeRepository;
-import com.dujiao.api.repository.WalletTransactionRepository;
-import java.math.BigDecimal;
+import com.dujiao.api.util.WalletRechargeApiMapper;
+import jakarta.persistence.criteria.Predicate;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
+import java.util.Objects;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,86 +30,133 @@ public class UserWalletRechargeService {
 
     private final WalletRechargeRepository walletRechargeRepository;
     private final WalletAccountRepository walletAccountRepository;
-    private final WalletTransactionRepository walletTransactionRepository;
     private final WalletBootstrapService walletBootstrapService;
+    private final PaymentRepository paymentRepository;
+    private final UserPaymentService userPaymentService;
 
     public UserWalletRechargeService(
             WalletRechargeRepository walletRechargeRepository,
             WalletAccountRepository walletAccountRepository,
-            WalletTransactionRepository walletTransactionRepository,
-            WalletBootstrapService walletBootstrapService) {
+            WalletBootstrapService walletBootstrapService,
+            PaymentRepository paymentRepository,
+            UserPaymentService userPaymentService) {
         this.walletRechargeRepository = walletRechargeRepository;
         this.walletAccountRepository = walletAccountRepository;
-        this.walletTransactionRepository = walletTransactionRepository;
         this.walletBootstrapService = walletBootstrapService;
+        this.paymentRepository = paymentRepository;
+        this.userPaymentService = userPaymentService;
     }
 
+    /**
+     * 完整流程应对齐 Go {@code PaymentService.CreateWalletRechargePayment}；当前未实现 Java 侧下单，共用 Go
+     * 库时请走 Go 创建充值或后续补齐。
+     */
     @Transactional
-    public WalletRechargeUserDto create(long userId, WalletRechargeCreateRequest req) {
-        WalletRechargeEntity e = new WalletRechargeEntity();
-        e.setUserId(userId);
-        e.setRechargeNo("RCH" + UUID.randomUUID().toString().replace("-", ""));
-        e.setAmount(req.amount());
-        e.setStatus("pending");
-        return toDto(walletRechargeRepository.save(e));
+    public WalletRechargePaymentPayloadDto create(long userId, WalletRechargeCreateRequest req) {
+        Objects.requireNonNull(req);
+        if (userId <= 0) {
+            throw new BusinessException(ResponseCodes.BAD_REQUEST, "bad_request");
+        }
+        throw new BusinessException(ResponseCodes.NOT_IMPLEMENTED, "not_implemented");
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<List<WalletRechargeUserDto>> list(long userId, int page, int pageSize) {
+    public PageResponse<List<WalletRechargeItemDto>> list(
+            long userId, int page, int pageSize, String status, String rechargeNo) {
         walletBootstrapService.ensureWallet(userId);
-        PageRequest pr = PageRequest.of(Math.max(page - 1, 0), pageSize <= 0 ? 20 : pageSize);
-        Page<WalletRechargeEntity> result = walletRechargeRepository.findByUserIdOrderByCreatedAtDesc(userId, pr);
-        List<WalletRechargeUserDto> list = result.getContent().stream().map(this::toDto).toList();
+        int p = Math.max(page, 1);
+        int ps = pageSize <= 0 ? 20 : Math.min(pageSize, 200);
+        PageRequest pr =
+                PageRequest.of(p - 1, ps, Sort.by(Sort.Direction.DESC, "id"));
+        Specification<WalletRechargeEntity> spec = userRechargeSpec(userId, status, rechargeNo);
+        Page<WalletRechargeEntity> result = walletRechargeRepository.findAll(spec, pr);
+        List<WalletRechargeItemDto> list =
+                result.getContent().stream().map(WalletRechargeApiMapper::toItem).toList();
         PaginationDto pg =
                 PaginationDto.of(result.getNumber() + 1, result.getSize(), result.getTotalElements());
         return PageResponse.success(list, pg);
     }
 
-    @Transactional(readOnly = true)
-    public WalletRechargeUserDto get(long userId, String rechargeNo) {
-        WalletRechargeEntity e =
-                walletRechargeRepository
-                        .findByUserIdAndRechargeNo(userId, rechargeNo)
-                        .orElseThrow(() -> new BusinessException(ResponseCodes.NOT_FOUND, "recharge_not_found"));
-        return toDto(e);
+    private static Specification<WalletRechargeEntity> userRechargeSpec(
+            long userId, String status, String rechargeNo) {
+        return (root, query, cb) -> {
+            List<Predicate> preds = new ArrayList<>();
+            preds.add(cb.equal(root.get("userId"), userId));
+            if (status != null && !status.isBlank()) {
+                preds.add(cb.equal(root.get("status"), status.trim()));
+            }
+            if (rechargeNo != null && !rechargeNo.isBlank()) {
+                preds.add(
+                        cb.like(
+                                root.get("rechargeNo"),
+                                "%" + rechargeNo.trim() + "%"));
+            }
+            return cb.and(preds.toArray(Predicate[]::new));
+        };
     }
 
-    /** 模拟支付网关确认入账：pending → completed，余额增加。 */
-    @Transactional
-    public WalletRechargeUserDto capture(long userId, long rechargeId) {
-        WalletRechargeEntity r =
-                walletRechargeRepository
-                        .findById(rechargeId)
-                        .orElseThrow(() -> new BusinessException(ResponseCodes.NOT_FOUND, "recharge_not_found"));
-        if (r.getUserId() != userId) {
-            throw new BusinessException(ResponseCodes.FORBIDDEN, "recharge_forbidden");
-        }
-        if (!"pending".equals(r.getStatus())) {
-            throw new BusinessException(ResponseCodes.BAD_REQUEST, "recharge_not_pending");
+    @Transactional(readOnly = true)
+    public WalletRechargePaymentPayloadDto get(long userId, String rechargeNo) {
+        String no = rechargeNo == null ? "" : rechargeNo.trim();
+        if (no.isEmpty()) {
+            throw new BusinessException(ResponseCodes.BAD_REQUEST, "bad_request");
         }
         walletBootstrapService.ensureWallet(userId);
-        WalletAccount w =
-                walletAccountRepository
-                        .findById(userId)
-                        .orElseThrow(() -> new BusinessException(ResponseCodes.NOT_FOUND, "wallet_not_found"));
-        BigDecimal delta = r.getAmount();
-        BigDecimal newBal = w.getBalance().add(delta);
-        w.setBalance(newBal);
-        walletAccountRepository.save(w);
-        WalletTransaction t = new WalletTransaction();
-        t.setUserId(userId);
-        t.setType("wallet_recharge");
-        t.setAmount(delta);
-        t.setBalanceAfter(newBal);
-        t.setRemark("recharge:" + r.getRechargeNo());
-        walletTransactionRepository.save(t);
-        r.setStatus("completed");
-        walletRechargeRepository.save(r);
-        return toDto(r);
+        WalletRechargeEntity r =
+                walletRechargeRepository
+                        .findByUserIdAndRechargeNo(userId, no)
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ResponseCodes.NOT_FOUND, "payment_not_found"));
+        return buildPayload(userId, r);
     }
 
-    private WalletRechargeUserDto toDto(WalletRechargeEntity e) {
-        return new WalletRechargeUserDto(
-                e.getId(), e.getRechargeNo(), e.getAmount(), e.getStatus(), e.getCreatedAt());
+    /**
+     * 与 Go {@code CaptureMyWalletRechargePayment} 一致：路径 {@code id} 为支付单 ID。钱包充值支付 {@code
+     * order_id=0} 时 Java 订单捕获会失败，此处忽略 {@code order_not_found} 后返回最新快照（网关捕获待后续对接）。
+     */
+    @Transactional
+    public WalletRechargePaymentPayloadDto capture(long userId, long paymentId) {
+        WalletRechargeEntity r =
+                walletRechargeRepository
+                        .findByPaymentIdAndUserId(paymentId, userId)
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ResponseCodes.NOT_FOUND, "payment_not_found"));
+        try {
+            userPaymentService.capturePayment(userId, paymentId);
+        } catch (BusinessException ex) {
+            if (!"order_not_found".equals(ex.getMessage())) {
+                throw ex;
+            }
+        }
+        WalletRechargeEntity fresh =
+                walletRechargeRepository
+                        .findByPaymentIdAndUserId(paymentId, userId)
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ResponseCodes.NOT_FOUND, "payment_not_found"));
+        return buildPayload(userId, fresh);
+    }
+
+    private WalletRechargePaymentPayloadDto buildPayload(long userId, WalletRechargeEntity r) {
+        PaymentEntity payment =
+                paymentRepository
+                        .findById(r.getPaymentId())
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ResponseCodes.INTERNAL, "payment_fetch_failed"));
+        WalletAccount account =
+                walletAccountRepository
+                        .findById(userId)
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ResponseCodes.INTERNAL, "user_fetch_failed"));
+        return WalletRechargeApiMapper.toPaymentPayload(r, payment, account);
     }
 }
